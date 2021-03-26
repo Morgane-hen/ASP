@@ -1,6 +1,7 @@
 package fr.uga.pddl4j.tutorial.asp;
 
 import fr.uga.pddl4j.encoding.CodedProblem;
+import fr.uga.pddl4j.encoding.Inertia;
 import fr.uga.pddl4j.heuristics.relaxation.Heuristic;
 import fr.uga.pddl4j.heuristics.relaxation.HeuristicToolKit;
 import fr.uga.pddl4j.parser.ErrorManager;
@@ -12,9 +13,12 @@ import fr.uga.pddl4j.planners.statespace.StateSpacePlanner;
 import fr.uga.pddl4j.util.BitOp;
 import fr.uga.pddl4j.util.BitState;
 import fr.uga.pddl4j.util.CondBitExp;
+import fr.uga.pddl4j.util.IntExp;
 import fr.uga.pddl4j.util.MemoryAgent;
 import fr.uga.pddl4j.util.Plan;
 import fr.uga.pddl4j.util.SequentialPlan;
+import fr.uga.pddl4j.util.BitExp;
+import fr.uga.pddl4j.util.BitVector;
 
 import java.io.File;
 import java.io.IOException;
@@ -24,6 +28,7 @@ import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Properties;
 import java.util.Set;
+import java.util.*;
 
 /**
  * This class implements a simple forward planner based on A* algorithm.
@@ -49,7 +54,8 @@ public final class ASP extends AbstractStateSpacePlanner {
     }
 
     /**
-     * Solves the planning problem and returns the first solution search found.  --A CHANGER POUR UN SAT PLANNER INSTEAD
+     * Solves the planning problem and returns the first solution search found. --A
+     * CHANGER POUR UN SAT PLANNER INSTEAD
      *
      * @param problem the problem to be solved.
      * @return a solution search or null if it does not exist.
@@ -62,15 +68,96 @@ public final class ASP extends AbstractStateSpacePlanner {
 
         // We get the initial state from the planning problem
         final BitState init = new BitState(problem.getInit());
+        
+        BitExp bExp = problem.getInit();
+        BitVector bVecN = bExp.getNegative();
+        BitVector bVecP = bExp.getPositive();
+
+
+        System.out.println("--------------Initial State--------------");
+        BitExp initalState = problem.getInit();
+        Clause initalStateClause = new Clause(initalState);
+        System.out.println(initalStateClause.toString());
+
+        System.out.println("--------------Goal State--------------");
+        BitExp goalState = problem.getGoal();
+        Clause goalStateClause = new Clause(goalState);
+        System.out.println(goalStateClause.toString());
+
+        
+        List<BitOp> lOP= problem.getOperators();
+        System.out.println("--------------getOperators--------------"+lOP.size());
+        
+        int step = 1;
+        for (BitOp op : lOP) {
+            BitExp bexp = op.getPreconditions();
+            BitExp beff = op.getUnconditionalEffects();
+            
+
+
+            BitVector BVPrecondPOS = bexp.getPositive();
+            BitVector BVPrecondNEG = bexp.getNegative();
+
+            BitVector BVEffPOS = beff.getPositive();
+            BitVector BVEffNEG = beff.getNegative();
+
+            System.out.println("****************************  OP "+step);
+            System.out.println("getPreconditions  POSITIVE: " +BVPrecondPOS.toString());
+            System.out.println("getPreconditions  NEGATIVE: " +BVPrecondNEG.toString());
+            System.out.println("Effects POSITIVE: " +BVEffPOS.toString());
+            System.out.println("Effects NEGATIVE: " +BVEffNEG.toString());
+            
+            Clause c = new Clause(BVPrecondPOS,BVPrecondNEG,BVEffPOS,BVEffNEG);
+            System.out.println("-----------In CLAUSE-----------");
+            System.out.println(c.toString());
+            step++;
+        }
+
+
+        List<IntExp> lFacts= problem.getRelevantFacts();
+        System.out.println("--------------getRelevantFacts--------------"+lFacts.size());
+        for (IntExp f : lFacts) {
+            int[] args = f.getArguments();
+            for (int arg : args) {
+                System.out.print(arg+" , ");
+            }
+            System.out.println();
+
+        }
+
+
+        /*System.out.println("--------------Problem :");
+        System.out.println(problem.toString(bExp));
+        System.out.println("bVecN" + bVecN.length());
+        System.out.println("bVecP" + bVecP.length());
+        
+        for (int i = 0; i < bVecP.length(); i++) {
+            System.out.println("bVecP " + i + " : " + problem.toString(bVecP));
+        }
+        
+        System.out.println("--------------Predicates :");
+        List<String> list = problem.getPredicates();
+        for (String string : list) {
+            System.out.println(string);
+        }
+
+        
+
+        System.out.println("--------------Types :");
+        list = problem.getTypes();
+        for (String string : list) {
+            System.out.println(string);
+        }*/
 
         // We initialize the closed list of nodes (store the nodes explored)
         final Set<Node> close = new HashSet<>();
 
-        // We initialize the opened list to store the pending node according to function f
+        // We initialize the opened list to store the pending node according to function
+        // f
         final double weight = (double) arguments.get(StateSpacePlanner.WEIGHT);
         final PriorityQueue<Node> open = new PriorityQueue<>(100, new Comparator<Node>() {
             public int compare(Node n1, Node n2) {
-                double f1 =  weight * n1.getHeuristic() + n1.getCost();
+                double f1 = weight * n1.getHeuristic() + n1.getCost();
                 double f2 = weight * n2.getHeuristic() + n2.getCost();
                 return Double.compare(f1, f2);
             }
@@ -93,7 +180,8 @@ public final class ASP extends AbstractStateSpacePlanner {
             final Node current = open.poll();
             close.add(current);
 
-            // If the goal is satisfy in the current node then extract the search and return it
+            // If the goal is satisfy in the current node then extract the search and return
+            // it
             if (current.satisfy(problem.getGoal())) {
                 return this.extractPlan(current, problem);
             }
@@ -137,7 +225,7 @@ public final class ASP extends AbstractStateSpacePlanner {
     /**
      * Extracts a search from a specified node.
      *
-     * @param node the node.
+     * @param node    the node.
      * @param problem the problem.
      * @return the search extracted from the specified node.
      */
@@ -157,10 +245,8 @@ public final class ASP extends AbstractStateSpacePlanner {
      */
     private static void printUsage() {
         final StringBuilder strb = new StringBuilder();
-        strb.append("\nusage of PDDL4J:\n")
-                .append("OPTIONS   DESCRIPTIONS\n")
-                .append("-o <str>    operator file name\n")
-                .append("-f <str>    fact file name\n")
+        strb.append("\nusage of PDDL4J:\n").append("OPTIONS   DESCRIPTIONS\n")
+                .append("-o <str>    operator file name\n").append("-f <str>    fact file name\n")
                 .append("-w <num>    the weight used in the a star seach (preset: 1.0)\n")
                 .append("-t <num>    specifies the maximum CPU-time in seconds (preset: 300)\n")
                 .append("-h          print this message\n\n");
@@ -181,32 +267,36 @@ public final class ASP extends AbstractStateSpacePlanner {
         // Parse the command line and update the default argument value
         for (int i = 0; i < args.length; i += 2) {
             if ("-o".equalsIgnoreCase(args[i]) && ((i + 1) < args.length)) {
-                if (!new File(args[i + 1]).exists()) return null;
+                if (!new File(args[i + 1]).exists())
+                    return null;
                 arguments.put(Planner.DOMAIN, new File(args[i + 1]));
             } else if ("-f".equalsIgnoreCase(args[i]) && ((i + 1) < args.length)) {
-                if (!new File(args[i + 1]).exists()) return null;
+                if (!new File(args[i + 1]).exists())
+                    return null;
                 arguments.put(Planner.PROBLEM, new File(args[i + 1]));
             } else if ("-t".equalsIgnoreCase(args[i]) && ((i + 1) < args.length)) {
                 final int timeout = Integer.parseInt(args[i + 1]) * 1000;
-                if (timeout < 0) return null;
+                if (timeout < 0)
+                    return null;
                 arguments.put(Planner.TIMEOUT, timeout);
             } else if ("-w".equalsIgnoreCase(args[i]) && ((i + 1) < args.length)) {
                 final double weight = Double.parseDouble(args[i + 1]);
-                if (weight < 0) return null;
+                if (weight < 0)
+                    return null;
                 arguments.put(StateSpacePlanner.WEIGHT, weight);
             } else {
                 return null;
             }
         }
         // Return null if the domain or the problem was not specified
-        return (arguments.get(Planner.DOMAIN) == null
-                || arguments.get(Planner.PROBLEM) == null) ? null : arguments;
+        return (arguments.get(Planner.DOMAIN) == null || arguments.get(Planner.PROBLEM) == null) ? null : arguments;
     }
 
     /**
-     * The main method of the <code>ASP</code> example. The command line syntax is as
-     * follow:
+     * The main method of the <code>ASP</code> example. The command line syntax is
+     * as follow:
      * <p>
+     * 
      * <pre>
      * usage of ASP:
      *
@@ -253,15 +343,26 @@ public final class ASP extends AbstractStateSpacePlanner {
         }
 
         final CodedProblem pb = factory.encode();
+
+        /*
+         * java.util.List<java.util.Set<java.lang.Integer>> listd = pb.getDomains();
+         * 
+         * for (Set<Integer> set : listd) { Iterator it = set.iterator(); while
+         * (it.hasNext()) { System.out.print(" " + it.next()); }
+         * System.out.println("*******"); }
+         * 
+         * java.util.List<java.lang.String> list = pb.getTypes(); for (String elt :
+         * list) { System.out.println(" " + elt); }
+         */
+
         planner.getStatistics().setMemoryUsedForProblemRepresentation(MemoryAgent.getDeepSizeOf(pb));
 
-        Planner.getLogger().trace("\nencoding problem done successfully ("
-                + pb.getOperators().size() + " ops, "
+        Planner.getLogger().trace("\nencoding problem done successfully (" + pb.getOperators().size() + " ops, "
                 + pb.getRelevantFacts().size() + " facts)\n");
 
         if (!pb.isSolvable()) {
-            Planner.getLogger().trace(String.format("goal can be simplified to FALSE."
-                    +  "no search will solve it%n%n"));
+            Planner.getLogger()
+                    .trace(String.format("goal can be simplified to FALSE." + "no search will solve it%n%n"));
             System.exit(0);
         }
 
@@ -280,17 +381,22 @@ public final class ASP extends AbstractStateSpacePlanner {
         // Get the runtime information from the planner
         Statistics info = planner.getStatistics();
 
-// Print time information
-        long time = info.getTimeToParse() +  info.getTimeToEncode() + info.getTimeToSearch();
-        Planner.getLogger().trace(String.format("%ntime spent:   %8.2f seconds parsing %n", info.getTimeToParse()/1000.0));
-        Planner.getLogger().trace(String.format("              %8.2f seconds encoding %n", info.getTimeToEncode()/1000.0));
-        Planner.getLogger().trace(String.format("              %8.2f seconds searching%n", info.getTimeToSearch()/1000.0));
-        Planner.getLogger().trace(String.format("              %8.2f seconds total time%n", time/1000.0));
+        // Print time information
+        long time = info.getTimeToParse() + info.getTimeToEncode() + info.getTimeToSearch();
+        Planner.getLogger()
+                .trace(String.format("%ntime spent:   %8.2f seconds parsing %n", info.getTimeToParse() / 1000.0));
+        Planner.getLogger()
+                .trace(String.format("              %8.2f seconds encoding %n", info.getTimeToEncode() / 1000.0));
+        Planner.getLogger()
+                .trace(String.format("              %8.2f seconds searching%n", info.getTimeToSearch() / 1000.0));
+        Planner.getLogger().trace(String.format("              %8.2f seconds total time%n", time / 1000.0));
 
-// Print memory usage information
+        // Print memory usage information
         long memory = info.getMemoryUsedForProblemRepresentation() + info.getMemoryUsedToSearch();
-        Planner.getLogger().trace(String.format("%nmemory used:  %8.2f MBytes for problem representation%n", info.getMemoryUsedForProblemRepresentation()/(1024.0*1024.0)));
-        Planner.getLogger().trace(String.format("              %8.2f MBytes for searching%n", info.getMemoryUsedToSearch()/(1024.0*1024.0)));
-        Planner.getLogger().trace(String.format("              %8.2f MBytes total%n%n%n", memory/(1024.0*1024.0)));
+        Planner.getLogger().trace(String.format("%nmemory used:  %8.2f MBytes for problem representation%n",
+                info.getMemoryUsedForProblemRepresentation() / (1024.0 * 1024.0)));
+        Planner.getLogger().trace(String.format("              %8.2f MBytes for searching%n",
+                info.getMemoryUsedToSearch() / (1024.0 * 1024.0)));
+        Planner.getLogger().trace(String.format("              %8.2f MBytes total%n%n%n", memory / (1024.0 * 1024.0)));
     }
 }
