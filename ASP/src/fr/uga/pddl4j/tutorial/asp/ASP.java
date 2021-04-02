@@ -29,6 +29,16 @@ import java.util.PriorityQueue;
 import java.util.Properties;
 import java.util.Set;
 import java.util.*;
+import org.sat4j.core.*;
+
+import org.sat4j.core.VecInt;
+import org.sat4j.minisat.SolverFactory;
+import org.sat4j.specs.ContradictionException;
+import org.sat4j.specs.IProblem;
+import org.sat4j.specs.ISolver;
+import org.sat4j.specs.TimeoutException;
+import org.sat4j.tools.ModelIterator;
+
 
 /**
  * This class implements a simple forward planner based on A* algorithm.
@@ -42,8 +52,9 @@ public final class ASP extends AbstractStateSpacePlanner {
      * The arguments of the planner.
      */
     private Properties arguments;
-
-    /**
+    Vec<VecInt> clauses;
+    ISolver solver = SolverFactory.newDefault();
+        /**
      * Creates a new HSP planner with the default parameters.
      *
      * @param arguments the arguments of the planner.
@@ -62,7 +73,6 @@ public final class ASP extends AbstractStateSpacePlanner {
      */
     @Override
     public Plan search(final CodedProblem problem) {
-
         // First we create an instance of the heuristic to use to guide the search
         final Heuristic heuristic = HeuristicToolKit.createHeuristic(Heuristic.Type.FAST_FORWARD, problem);
 
@@ -73,19 +83,30 @@ public final class ASP extends AbstractStateSpacePlanner {
         BitVector bVecN = bExp.getNegative();
         BitVector bVecP = bExp.getPositive();
 
+        List<BitOp> lOP= problem.getOperators();
+
 
         System.out.println("--------------Initial State--------------");
         BitExp initalState = problem.getInit();
-        Clause initalStateClause = new Clause(initalState);
+        Clause initalStateClause = new Clause(initalState, lOP.size());
+        VecInt clause = new VecInt(initalStateClause.list.size());
+        for (int elt : initalStateClause.list) {
+            clause.push(elt);
+        }
+        clauses.push(clause);
         System.out.println(initalStateClause.toString());
 
         System.out.println("--------------Goal State--------------");
         BitExp goalState = problem.getGoal();
-        Clause goalStateClause = new Clause(goalState);
+        Clause goalStateClause = new Clause(goalState, lOP.size());
+        clause = new VecInt(goalStateClause.list.size());
+        for (int elt : goalStateClause.list) {
+            clause.push(elt);
+        }
+        clauses.push(clause);
         System.out.println(goalStateClause.toString());
 
         
-        List<BitOp> lOP= problem.getOperators();
         System.out.println("--------------getOperators--------------"+lOP.size());
         
         int step = 1;
@@ -107,11 +128,44 @@ public final class ASP extends AbstractStateSpacePlanner {
             System.out.println("Effects POSITIVE: " +BVEffPOS.toString());
             System.out.println("Effects NEGATIVE: " +BVEffNEG.toString());
             
-            Clause c = new Clause(BVPrecondPOS,BVPrecondNEG,BVEffPOS,BVEffNEG);
+            Clause c = new Clause(BVPrecondPOS,BVPrecondNEG,BVEffPOS,BVEffNEG, lOP.indexOf(op)+1, lOP.size());
+            clause = new VecInt(c.list.size());
+            for (int elt : c.list) {
+                clause.push(elt);
+            }
+            clauses.push(clause);
             System.out.println("-----------In CLAUSE-----------");
             System.out.println(c.toString());
             step++;
         }
+
+        for (VecInt cl : clauses) {
+            try {
+                solver.addClause(cl);
+            } catch (ContradictionException e){
+                System.out.println("SAT encoding failure!");
+                System.exit(0);
+            }
+        }
+        final Plan plan = new SequentialPlan();
+        // We are done. Working now on the IProblem interface
+        IProblem ip = solver;
+        try {
+            if (ip.isSatisfiable()) {
+                int[] resultat = ip.findModel();
+                System.out.print("Resultat");
+
+                for (int i : resultat) {
+                    System.out.print(i+" , ");
+                }
+            } else {
+
+            }
+        } catch (TimeoutException e){
+            System.out.println("Timeout! No solution found!");
+            System.exit(0);
+        }
+
 
 
         List<IntExp> lFacts= problem.getRelevantFacts();
@@ -168,7 +222,7 @@ public final class ASP extends AbstractStateSpacePlanner {
 
         // We adds the root to the list of pending nodes
         open.add(root);
-        Plan plan = null;
+        //Plan plan = null;
 
         final int timeout = ((int) this.arguments.get(Planner.TIMEOUT)) * 1000;
         long time = 0;
